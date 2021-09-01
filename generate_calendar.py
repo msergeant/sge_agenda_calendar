@@ -49,16 +49,60 @@ def parse_csv_file(filename):
             'ideas': ideas,
             'days': days}
 
+
+def render_week(data, monday):
+    quote = data['quotes'].get(monday)
+    idea = data['ideas'].get(monday)
+    concept = concept_of_quarter(monday, data)
+
+    if concept:
+        print(f"Concept of the quarter: {concept}")
+
+    if quote:
+        print(f'Quote of the week: "{quote.get("quote")}" '
+              f'-- {quote.get("author")}')
+    if idea:
+        print(f'Idea of the week: {idea}')
+
+    for i in range(5):
+        date = (monday + datetime.timedelta(days=i))
+        days = data['days'].get(date)
+
+        if days:
+            text = [i for i in days if i]
+            print(f"{date.day} {'|'.join(text)}")
+        else:
+            print(f"{date.day}")
+
+
 def generate_calendar():
     parser = argparse.ArgumentParser(
         description='Generate a pdf of agenda calendar days')
     parser.add_argument('--csv', dest='csv',
                         help='The source CSV file for generating the calendar')
+    parser.add_argument('--first', dest='first', required=True,
+                        help='The first day of the calendar (mm/dd/yyyy)')
+    parser.add_argument('--last', dest='last', required=True,
+                        help='The last day of the calendar (mm/dd/yyyy)')
 
     args = parser.parse_args()
 
-    data = parse_csv_file(args.csv)
-    print(data)
+    if args.csv:
+        data = parse_csv_file(args.csv)
+    else:
+        print("You must include either a --csv or --xlsx argument")
+
+    first_date = datetime.datetime.strptime(args.first, '%m/%d/%Y').date()
+    last_date = datetime.datetime.strptime(args.last, '%m/%d/%Y').date()
+
+    if last_date <= first_date:
+        print("First date must be before last date")
+
+    current_date = monday_of_week(first_date)
+    while current_date <= last_date:
+        render_week(data, current_date)
+        current_date = (current_date + datetime.timedelta(days=7))
+
 
 if __name__ == "__main__":
     generate_calendar()
