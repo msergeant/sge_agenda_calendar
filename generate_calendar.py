@@ -1,11 +1,19 @@
 import argparse
 import csv
 import datetime
+from io import BytesIO
+
+from PyPDF2 import PdfFileReader, PdfFileWriter
+from reportlab.lib.pagesizes import inch, letter
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+FRAME_WIDTH = 570.
+TOP_MARGIN = 0.35 * inch
 
 
 def monday_of_week(date):
     weekday = date.weekday()
-    if  weekday == 6:
+    if weekday == 6:
         return date + datetime.timedelta(days=1)
     elif weekday % 7 != 0:
         return date - datetime.timedelta(days=weekday)
@@ -50,6 +58,18 @@ def parse_csv_file(filename):
             'days': days}
 
 
+def bind(buff, doc, elements, pages):
+    doc.build(elements)
+    buff.seek(0)
+    new_pages = PdfFileReader(buff).pages
+    if not pages:
+        return [p for p in new_pages]
+    existing_page = pages[0]
+    for new_page in new_pages:
+        new_page.mergePage(existing_page)
+    return new_pages
+
+
 def render_week(data, monday):
     quote = data['quotes'].get(monday)
     idea = data['ideas'].get(monday)
@@ -73,6 +93,22 @@ def render_week(data, monday):
             print(f"{date.day} {'|'.join(text)}")
         else:
             print(f"{date.day}")
+
+    buff = BytesIO()
+    side_margin = (letter[0] - FRAME_WIDTH) / 2.
+    doc = SimpleDocTemplate(buff, pagesize=letter)
+    doc.leftMargin = side_margin
+    doc.rightMargin = side_margin
+    doc.bottomMargin = 0.
+    doc.topMargin = TOP_MARGIN
+    elements = [Paragraph("Aw nah!!!!")]
+
+    doc.build(elements)
+    new_pages = PdfFileReader(buff).pages
+    existing_page = PdfFileReader("left_page.pdf").pages[0]
+    for new_page in new_pages:
+        new_page.mergePage(existing_page)
+    return new_pages
 
 
 def generate_calendar():
@@ -99,11 +135,23 @@ def generate_calendar():
         print("First date must be before last date")
 
     current_date = monday_of_week(first_date)
+    pages = []
     while current_date <= last_date:
-        render_week(data, current_date)
+        pages.extend(render_week(data, current_date))
         current_date = (current_date + datetime.timedelta(days=7))
+
+    buff = BytesIO()
+    output = PdfFileWriter()
+    for page in pages:
+        output.addPage(page)
+
+    output.write(buff)
+
+    filename = "agenda_out.pdf"
+    print(f"Completed: {filename}")
+    with open(filename, "wb") as f:
+        f.write(buff.getbuffer())
 
 
 if __name__ == "__main__":
     generate_calendar()
-
