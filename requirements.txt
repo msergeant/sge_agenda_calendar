@@ -1,2 +1,5 @@
-reportlab
+PyPDF2
+flake8
+isort
 pytest
+reportlab
