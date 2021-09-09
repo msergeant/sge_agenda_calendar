@@ -5,10 +5,29 @@ from io import BytesIO
 
 from PyPDF2 import PdfFileReader, PdfFileWriter
 from reportlab.lib.pagesizes import inch, letter
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
 
 FRAME_WIDTH = 570.
 TOP_MARGIN = 0.35 * inch
+
+HeaderStyle = ParagraphStyle(
+    name="header",
+    font="Calibri-Bold",
+    fontSize=22,
+)
+
+DayHeaderStyle = ParagraphStyle(
+    name="dayHeader",
+    font="Calibri-Bold",
+    fontSize=16,
+)
+
+EventStyle = ParagraphStyle(
+    name="dayHeader",
+    font="Calibri",
+    fontSize=12,
+)
 
 
 def monday_of_week(date):
@@ -43,14 +62,14 @@ def parse_csv_file(filename):
 
             if row.get('Type') == 'quote':
                 quotes[monday_of_week(date).date()] = {
-                    'quote': row.get('Line1'),
-                    'author': row.get('Line2')}
+                    'quote': row.get('Event1'),
+                    'author': row.get('Event2')}
             elif row.get('Type') == 'idea':
-                ideas[monday_of_week(date).date()] = row.get('Line1')
+                ideas[monday_of_week(date).date()] = row.get('Event1')
             elif row.get('Type') == 'concept':
-                concepts[date.date()] = row.get('Line1')
+                concepts[date.date()] = row.get('Event1')
             elif row.get('Type') == 'day':
-                days[date.date()] = [row.get(f"Line{x}") for x in range(1, 9)]
+                days[date.date()] = [row.get(f"Event{x}") for x in range(1, 6)]
 
     return {'quotes': quotes,
             'concepts': concepts,
@@ -58,57 +77,67 @@ def parse_csv_file(filename):
             'days': days}
 
 
-def bind(buff, doc, elements, pages):
-    doc.build(elements)
-    buff.seek(0)
-    new_pages = PdfFileReader(buff).pages
-    if not pages:
-        return [p for p in new_pages]
-    existing_page = pages[0]
-    for new_page in new_pages:
-        new_page.mergePage(existing_page)
-    return new_pages
+def _single_day(data, date):
+    table_data = [[Paragraph(date.strftime('%A, %B %d, %Y'),
+                             DayHeaderStyle)]]
+    events = data['days'].get(date, [])
+
+    for event in events:
+        if event:
+            table_data.append([Paragraph(event, EventStyle)])
+
+    return Table(table_data,
+                 rowHeights=([0.4*inch] +
+                             [0.3 * inch for x in range(len(table_data) - 1)]),
+                 style=[('VALIGN', (0, 0), (0, 0), "TOP")])
 
 
-def render_week(data, monday):
-    quote = data['quotes'].get(monday)
-    idea = data['ideas'].get(monday)
-    concept = concept_of_quarter(monday, data)
-
-    if concept:
-        print(f"Concept of the quarter: {concept}")
-
-    if quote:
-        print(f'Quote of the week: "{quote.get("quote")}" '
-              f'-- {quote.get("author")}')
-    if idea:
-        print(f'Idea of the week: {idea}')
-
-    for i in range(5):
-        date = (monday + datetime.timedelta(days=i))
-        days = data['days'].get(date)
-
-        if days:
-            text = [i for i in days if i]
-            print(f"{date.day} {'|'.join(text)}")
-        else:
-            print(f"{date.day}")
-
+def _merge_elements(elements, existing_page):
     buff = BytesIO()
     side_margin = (letter[0] - FRAME_WIDTH) / 2.
     doc = SimpleDocTemplate(buff, pagesize=letter)
-    doc.leftMargin = side_margin
+    doc.leftMargin = side_margin + 0.23 * inch
     doc.rightMargin = side_margin
     doc.bottomMargin = 0.
     doc.topMargin = TOP_MARGIN
-    elements = [Paragraph("Aw nah!!!!")]
 
     doc.build(elements)
     new_pages = PdfFileReader(buff).pages
-    existing_page = PdfFileReader("left_page.pdf").pages[0]
     for new_page in new_pages:
         new_page.mergePage(existing_page)
     return new_pages
+
+
+def render_left_page(data, monday, left_page):
+    tuesday = monday + datetime.timedelta(days=1)
+    wednesday = monday + datetime.timedelta(days=2)
+    friday = monday + datetime.timedelta(days=4)
+
+    elements = [Paragraph(f"{monday.strftime('%B %d').upper()} - "
+                          f"{friday.strftime('%B %d').upper()}", HeaderStyle),
+                Spacer(width=60, height=0.4*inch),
+                Table([[_single_day(data, monday)],
+                       [_single_day(data, tuesday)],
+                       [_single_day(data, wednesday)]],
+                      rowHeights=3.18*inch,
+                      style=[
+                          ("VALIGN", (0, 0), (-1, -1), "TOP")])]
+
+    return _merge_elements(elements, left_page)
+
+
+def render_right_page(data, monday, right_page):
+    thursday = monday + datetime.timedelta(days=3)
+    friday = monday + datetime.timedelta(days=4)
+
+    elements = [Spacer(width=60, height=0.6*inch),
+                Table([[_single_day(data, thursday)],
+                       [_single_day(data, friday)]],
+                      rowHeights=3.18*inch,
+                      style=[
+                          ("VALIGN", (0, 0), (-1, -1), "TOP")])]
+
+    return _merge_elements(elements, right_page)
 
 
 def generate_calendar():
@@ -136,8 +165,11 @@ def generate_calendar():
 
     current_date = monday_of_week(first_date)
     pages = []
+    left_page = PdfFileReader("left_page.pdf").pages[0]
+    right_page = PdfFileReader("right_page.pdf").pages[0]
     while current_date <= last_date:
-        pages.extend(render_week(data, current_date))
+        pages.extend(render_left_page(data, current_date, left_page))
+        pages.extend(render_right_page(data, current_date, right_page))
         current_date = (current_date + datetime.timedelta(days=7))
 
     buff = BytesIO()
