@@ -175,6 +175,7 @@ def generate_calendar():
     buff = BytesIO()
     output = PdfFileWriter()
     for page in pages:
+        page.compressContentStreams()
         output.addPage(page)
 
     output.write(buff)
