@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+import textwrap
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -102,7 +103,7 @@ def parse_excel_file(filename):
 
 
 def _single_day(data, date):
-    table_data = [[Paragraph(date.strftime('%A, %B %d, %Y'),
+    table_data = [[Paragraph(date.strftime('%A, %B %-d, %Y'),
                              DayHeaderStyle)]]
     events = data['days'].get(date, [])
 
@@ -138,8 +139,8 @@ def render_left_page(data, monday, left_page):
     wednesday = monday + datetime.timedelta(days=2)
     friday = monday + datetime.timedelta(days=4)
 
-    elements = [Paragraph(f"{monday.strftime('%B %d').upper()} - "
-                          f"{friday.strftime('%B %d').upper()}", HeaderStyle),
+    elements = [Paragraph(f"{monday.strftime('%B %-d').upper()} - "
+                          f"{friday.strftime('%B %-d').upper()}", HeaderStyle),
                 Spacer(width=60, height=0.4*inch),
                 Table([[_single_day(data, monday)],
                        [_single_day(data, tuesday)],
@@ -153,6 +154,10 @@ def render_left_page(data, monday, left_page):
 
 def render_right_page(data, monday, right_page, week_num):
     quote = data['quotes'][week_num % len(data['quotes'])]
+    wrapped = textwrap.wrap(quote)
+    if len(wrapped) > 1 and ' ' in wrapped[-1]:
+        quote = '<br/>'.join(wrapped)
+
     idea = data['ideas'][week_num % len(data['ideas'])]
     thursday = monday + datetime.timedelta(days=3)
     friday = monday + datetime.timedelta(days=4)
