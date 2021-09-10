@@ -1,5 +1,6 @@
 PyPDF2
 flake8
 isort
+openpyxl
 pytest
 reportlab

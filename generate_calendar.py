@@ -1,32 +1,57 @@
 import argparse
-import csv
 import datetime
+import os
 from io import BytesIO
 
+from openpyxl import load_workbook
 from PyPDF2 import PdfFileReader, PdfFileWriter
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import inch, letter
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+
+
+def register_font(fnt):
+    pdfmetrics.registerFont(TTFont(fnt, os.path.join("fonts/", fnt + '.ttf')))
+
 
 FRAME_WIDTH = 570.
 TOP_MARGIN = 0.35 * inch
 
 HeaderStyle = ParagraphStyle(
     name="header",
-    font="Calibri-Bold",
+    fontName="Carlito-Bold",
     fontSize=22,
+    leftIndent=11,
 )
 
 DayHeaderStyle = ParagraphStyle(
     name="dayHeader",
-    font="Calibri-Bold",
+    fontName="Carlito-Bold",
     fontSize=16,
 )
 
 EventStyle = ParagraphStyle(
-    name="dayHeader",
-    font="Calibri",
+    name="event",
+    fontName="Carlito-Regular",
     fontSize=12,
+)
+
+QuoteStyle = ParagraphStyle(
+    name="quote",
+    fontName="Carlito-BoldItalic",
+    fontSize=16,
+    leading=17,
+    alignment=TA_CENTER,
+)
+
+IdeaStyle = ParagraphStyle(
+    name="idea",
+    fontName="Carlito-Bold",
+    fontSize=13,
+    leading=14,
 )
 
 
@@ -50,29 +75,28 @@ def concept_of_quarter(date, data):
     return data['concepts'].get(closest)
 
 
-def parse_csv_file(filename):
-    quotes = {}
-    concepts = {}
-    ideas = {}
+def parse_excel_file(filename):
+    quotes = []
+    ideas = []
     days = {}
 
-    with open(filename) as file:
-        for row in csv.DictReader(file):
-            date = datetime.datetime.strptime(row.get('Date'), '%m/%d/%Y')
+    wb = load_workbook(filename=filename)
+    events = wb['Events']
+    for row in events.rows:
+        if row[0].value and row[0].value != 'Date' and row[1].value:
+            date = row[0].value
+            days[date.date()] = [row[x].value for x in range(1, 6)
+                                 if row[x].value]
 
-            if row.get('Type') == 'quote':
-                quotes[monday_of_week(date).date()] = {
-                    'quote': row.get('Event1'),
-                    'author': row.get('Event2')}
-            elif row.get('Type') == 'idea':
-                ideas[monday_of_week(date).date()] = row.get('Event1')
-            elif row.get('Type') == 'concept':
-                concepts[date.date()] = row.get('Event1')
-            elif row.get('Type') == 'day':
-                days[date.date()] = [row.get(f"Event{x}") for x in range(1, 6)]
+    quote_sheet = wb['Quotes & Do Different Ideas']
+    for i, row in enumerate(quote_sheet.rows):
+        if row[0].value and i > 0:
+            quotes.append(row[0].value)
+
+        if row[2].value and i > 0:
+            ideas.append(row[2].value)
 
     return {'quotes': quotes,
-            'concepts': concepts,
             'ideas': ideas,
             'days': days}
 
@@ -87,16 +111,17 @@ def _single_day(data, date):
             table_data.append([Paragraph(event, EventStyle)])
 
     return Table(table_data,
-                 rowHeights=([0.4*inch] +
+                 rowHeights=([0.3*inch] +
                              [0.3 * inch for x in range(len(table_data) - 1)]),
-                 style=[('VALIGN', (0, 0), (0, 0), "TOP")])
+                 style=[('LEFTPADDING', (0, 0), (-1, -1), 12),
+                        ('VALIGN', (0, 0), (0, 0), "TOP")])
 
 
 def _merge_elements(elements, existing_page):
     buff = BytesIO()
     side_margin = (letter[0] - FRAME_WIDTH) / 2.
     doc = SimpleDocTemplate(buff, pagesize=letter)
-    doc.leftMargin = side_margin + 0.23 * inch
+    doc.leftMargin = side_margin
     doc.rightMargin = side_margin
     doc.bottomMargin = 0.
     doc.topMargin = TOP_MARGIN
@@ -126,16 +151,27 @@ def render_left_page(data, monday, left_page):
     return _merge_elements(elements, left_page)
 
 
-def render_right_page(data, monday, right_page):
+def render_right_page(data, monday, right_page, week_num):
+    quote = data['quotes'][week_num % len(data['quotes'])]
+    idea = data['ideas'][week_num % len(data['ideas'])]
     thursday = monday + datetime.timedelta(days=3)
     friday = monday + datetime.timedelta(days=4)
 
-    elements = [Spacer(width=60, height=0.6*inch),
+    elements = [Table([[Paragraph(quote, QuoteStyle)]],
+                      rowHeights=0.6*inch,
+                      style=[("TOPPADDING", (0, 0), (-1, -1), 0),
+                             ("VALIGN", (0, 0), (-1, -1), "TOP")]),
                 Table([[_single_day(data, thursday)],
                        [_single_day(data, friday)]],
                       rowHeights=3.18*inch,
                       style=[
-                          ("VALIGN", (0, 0), (-1, -1), "TOP")])]
+                          ("VALIGN", (0, 0), (-1, -1), "TOP")]),
+                Spacer(width=60, height=0.1 * inch),
+                Table([['', Paragraph(idea, IdeaStyle)]],
+                      rowHeights=0.8*inch,
+                      colWidths=[0.9*inch, 6*inch],
+                      style=[("TOPPADDING", (0, 0), (-1, -1), 10),
+                             ("VALIGN", (0, 0), (-1, -1), "TOP")])]
 
     return _merge_elements(elements, right_page)
 
@@ -143,34 +179,46 @@ def render_right_page(data, monday, right_page):
 def generate_calendar():
     parser = argparse.ArgumentParser(
         description='Generate a pdf of agenda calendar days')
-    parser.add_argument('--csv', dest='csv',
-                        help='The source CSV file for generating the calendar')
+
     parser.add_argument('--first', dest='first', required=True,
                         help='The first day of the calendar (mm/dd/yyyy)')
     parser.add_argument('--last', dest='last', required=True,
                         help='The last day of the calendar (mm/dd/yyyy)')
+    parser.add_argument('--source', dest='source', required=True,
+                        help='The source file for generating the calendar')
 
     args = parser.parse_args()
 
-    if args.csv:
-        data = parse_csv_file(args.csv)
-    else:
-        print("You must include either a --csv or --xlsx argument")
+    if 'xlsx' not in args.source:
+        print("source file must be xlsx file type")
+        return
 
     first_date = datetime.datetime.strptime(args.first, '%m/%d/%Y').date()
     last_date = datetime.datetime.strptime(args.last, '%m/%d/%Y').date()
 
     if last_date <= first_date:
         print("First date must be before last date")
+        return
+
+    data = parse_excel_file(args.source)
+
+    register_font("Carlito-Regular")
+    register_font("Carlito-Bold")
+    register_font("Carlito-BoldItalic")
 
     current_date = monday_of_week(first_date)
     pages = []
+    week_num = 0
     left_page = PdfFileReader("left_page.pdf").pages[0]
     right_page = PdfFileReader("right_page.pdf").pages[0]
     while current_date <= last_date:
         pages.extend(render_left_page(data, current_date, left_page))
-        pages.extend(render_right_page(data, current_date, right_page))
+        pages.extend(render_right_page(data,
+                                       current_date,
+                                       right_page,
+                                       week_num))
         current_date = (current_date + datetime.timedelta(days=7))
+        week_num += 1
 
     buff = BytesIO()
     output = PdfFileWriter()
