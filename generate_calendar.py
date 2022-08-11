@@ -37,7 +37,7 @@ DayHeaderStyle = ParagraphStyle(
 EventStyle = ParagraphStyle(
     name="event",
     fontName="Carlito-Regular",
-    fontSize=12,
+    fontSize=11,
 )
 
 QuoteStyle = ParagraphStyle(
@@ -111,11 +111,12 @@ def _single_day(data, date):
         if event:
             table_data.append([Paragraph(event, EventStyle)])
 
-    return Table(table_data,
-                 rowHeights=([0.3*inch] +
-                             [0.3 * inch for x in range(len(table_data) - 1)]),
-                 style=[('LEFTPADDING', (0, 0), (-1, -1), 12),
-                        ('VALIGN', (0, 0), (0, 0), "TOP")])
+    return Table(
+        table_data,
+        rowHeights=([0.35*inch] +
+                    [0.25 * inch for x in range(len(table_data) - 1)]),
+        style=[('LEFTPADDING', (0, 0), (-1, -1), 12),
+               ('VALIGN', (0, 0), (0, 0), "TOP")])
 
 
 def _merge_elements(elements, existing_page):
