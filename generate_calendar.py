@@ -135,9 +135,11 @@ def _merge_elements(elements, existing_page):
     return new_pages
 
 
-def render_left_page(data, monday, left_page):
+def render_page(data, monday, page):
     tuesday = monday + datetime.timedelta(days=1)
     wednesday = monday + datetime.timedelta(days=2)
+    friday = monday + datetime.timedelta(days=4)
+    thursday = monday + datetime.timedelta(days=3)
     friday = monday + datetime.timedelta(days=4)
 
     elements = [Paragraph(f"{monday.strftime('%B %-d').upper()} - "
@@ -145,41 +147,14 @@ def render_left_page(data, monday, left_page):
                 Spacer(width=60, height=0.4*inch),
                 Table([[_single_day(data, monday)],
                        [_single_day(data, tuesday)],
-                       [_single_day(data, wednesday)]],
-                      rowHeights=3.18*inch,
+                       [_single_day(data, wednesday)],
+                       [_single_day(data, thursday)],
+                       [_single_day(data, friday)]],
+                      rowHeights=1.90*inch,
                       style=[
                           ("VALIGN", (0, 0), (-1, -1), "TOP")])]
 
-    return _merge_elements(elements, left_page)
-
-
-def render_right_page(data, monday, right_page, week_num):
-    quote = data['quotes'][week_num % len(data['quotes'])]
-    wrapped = textwrap.wrap(quote)
-    if len(wrapped) > 1 and ' ' in wrapped[-1]:
-        quote = '<br/>'.join(wrapped)
-
-    idea = data['ideas'][week_num % len(data['ideas'])]
-    thursday = monday + datetime.timedelta(days=3)
-    friday = monday + datetime.timedelta(days=4)
-
-    elements = [Table([[Paragraph(quote, QuoteStyle)]],
-                      rowHeights=0.6*inch,
-                      style=[("TOPPADDING", (0, 0), (-1, -1), 0),
-                             ("VALIGN", (0, 0), (-1, -1), "TOP")]),
-                Table([[_single_day(data, thursday)],
-                       [_single_day(data, friday)]],
-                      rowHeights=3.18*inch,
-                      style=[
-                          ("VALIGN", (0, 0), (-1, -1), "TOP")]),
-                Spacer(width=60, height=0.1 * inch),
-                Table([['', Paragraph(idea, IdeaStyle)]],
-                      rowHeights=0.8*inch,
-                      colWidths=[0.9*inch, 6*inch],
-                      style=[("TOPPADDING", (0, 0), (-1, -1), 10),
-                             ("VALIGN", (0, 0), (-1, -1), "TOP")])]
-
-    return _merge_elements(elements, right_page)
+    return _merge_elements(elements, page)
 
 
 def generate_calendar():
@@ -214,17 +189,10 @@ def generate_calendar():
 
     current_date = monday_of_week(first_date)
     pages = []
-    week_num = 0
-    left_page = PdfFileReader("left_page.pdf").pages[0]
-    right_page = PdfFileReader("right_page.pdf").pages[0]
+    only_page = PdfFileReader("only_page.pdf").pages[0]
     while current_date <= last_date:
-        pages.extend(render_left_page(data, current_date, left_page))
-        pages.extend(render_right_page(data,
-                                       current_date,
-                                       right_page,
-                                       week_num))
+        pages.extend(render_page(data, current_date, only_page))
         current_date = (current_date + datetime.timedelta(days=7))
-        week_num += 1
 
     buff = BytesIO()
     output = PdfFileWriter()
